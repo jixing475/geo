@@ -1,0 +1,202 @@
+---
+title: "hello world"
+description: |
+  Taking the `radix` R package for a test spin with `Scikit Learn`!
+author:
+  - name: Jixing Liu
+    url: https://jixing.netlify.com/
+    affiliation: iCarbonX
+    affiliation_url: https://www.icarbonx.com/en/
+date: "`r Sys.Date()`"
+#bibliography: biblio.bib  
+output:
+  radix::radix_article:
+    css: Blog_Template_Style.css
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    self_contained: true
+  md_document:
+always_allow_html: yes
+#bibliography: ./../../references.bib
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,      # Output code chunks
+  message = FALSE,  # Toggle off message output 
+  warning = FALSE,    # Toggle off warning output
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "graphics/knitr-",
+  fig.retina = 2, # Control using dpi
+  fig.width = 6,  # generated images
+  fig.pos = "t",  # pdf mode
+  fig.align = "center",
+  dpi = if (knitr::is_latex_output()) 72 else 300, 
+  out.width = "100%",
+  dev = "svg",
+  dev.args = list(png = list(type = "cairo-png")),
+  optipng = "-o1 -quiet") 
+
+library(reticulate)
+# reticulate::py_config()
+# knitr::opts_knit$set(root.dir = usethis::proj_path())
+
+# libraries used in report
+library(knitr)
+library(kableExtra)
+library(tidyverse)
+
+theme_set(theme_light(base_family = "Avenir"))
+```
+
+
+```{r}
+library(GDCRNATools)
+library(janitor)
+library(enrichR)
+library(officer)
+library(ggtext)
+# library(NPC.NasopharyngealCarcinoma)
+devtools::load_all(".")
+
+```
+
+
+
+## 生存分析
+
+### load data
+
+```{r}
+library("survival")
+library("survminer")
+library("gtsummary")
+library(tidyverse)
+clin <- rio::import("analysis/data/raw_data/GSE102349/GSE102349_sample.txt") %>% 
+  select(c("Acc", "Desc","time to event", "event")) %>% 
+  janitor::clean_names()
+
+clin <- 
+clin %>% 
+  filter(time_to_event != "N/A") %>% 
+  rename(sample = desc) 
+
+data <- rio::import("analysis/data/raw_data/GSE102349/GSE102349_NPC_mRNA_processed.txt.gz")
+
+```
+
+## 整理格式
+
+```{r}
+expr <-
+  data %>%
+  tibble::column_to_rownames("Gene.Symbol") %>%
+  manuscriptsR::df_turn() %>%
+  rownames_to_column("sample")
+
+df_sur <-
+  clin %>%
+  left_join(expr)
+
+# colnames(df_sur)
+df_sur_clean <-
+  df_sur %>%
+  mutate(
+    time = as.numeric(time_to_event) * 30,
+    status = if_else(event == "Disease progression", 2, 1)
+  ) %>%
+  select(-acc, -sample, -time_to_event, -event)
+```
+
+
+## gene list : subset variable
+```{r}
+gene_list <- rio::import("analysis/data/derived_data/venn_2021-03-30/up_genes.csv") %>% pull(genes)
+
+df_sur_clean_sub <- 
+  df_sur_clean %>% 
+  select(c(intersect(gene_list, colnames(.)), time, status)) 
+```
+
+
+
+## cox uni
+
+```{r}
+res <- list()
+
+# word:单变量 cox 回归
+res$uni_cox_docx <-
+  df_sur_clean_sub %>% 
+  tbl_uvregression(
+    .,
+    method = coxph,
+    y = Surv(time, status),
+    exponentiate = TRUE,
+    hide_n = TRUE
+  ) %>%
+  as_flex_table()
+```
+
+
+## KM plot
+
+```{r}
+## 设置需要进行拟合的变量
+covariates <- df_sur_clean_sub %>% colnames() %>%
+  discard(~ str_detect(.x, "time|status"))
+
+df_sur_clean_km <-
+  df_sur_clean_sub %>%
+  mutate(across(
+    all_of(covariates),
+    ~ if_else(.x <= median(.x), "Low", "High") %>%
+      as_factor() %>%
+      fct_relevel(., "Low", "High")
+  )) 
+
+#plot
+for (it in covariates) {
+  print(it)
+  # 存储图像
+  res[[stringr::str_glue("{it}_plot")]] <- 
+  ## 拟合的形式
+  as.formula(paste('Surv(time, status)~', it)) %>% 
+    surv_fit(., data = df_sur_clean_km) %>% 
+    ggsurvplot(
+      data = df_sur_clean_km,
+      size = 1,  
+      legend.title = it, # change line size
+      palette =
+        c("#194685", "#DA3022"),# custom color palettes
+      # conf.int = TRUE,          # Add confidence interval
+      pval = TRUE,              # Add p-value
+      risk.table = TRUE,        # Add risk table
+      risk.table.col = "strata",# Risk table color by groups
+      legend.labs =
+        c("Low", "High"),    # Change legend labels
+      risk.table.height = 0.25, # Useful to change when you have multiple groups
+      ggtheme = theme_bw()      # Change ggplot2 theme
+    )
+}
+```
+
+
+## 输出结果
+```{r}
+gse_id <- "GSE102349"
+# run
+res_path <- stringr::str_glue("analysis/data/derived_data/survival_{gse_id}")
+fs::dir_create(res_path)
+
+my_export(res, path = res_path)
+save.image(stringr::str_glue("{res_path}/.Rdata"))
+```
+
+
+

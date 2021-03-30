@@ -1,0 +1,161 @@
+---
+title: "hello world"
+description: |
+  Taking the `radix` R package for a test spin with `Scikit Learn`!
+author:
+  - name: Jixing Liu
+    url: https://jixing.netlify.com/
+    affiliation: iCarbonX
+    affiliation_url: https://www.icarbonx.com/en/
+date: "`r Sys.Date()`"
+#bibliography: biblio.bib  
+output:
+  radix::radix_article:
+    css: Blog_Template_Style.css
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    self_contained: true
+  md_document:
+always_allow_html: yes
+#bibliography: ./../../references.bib
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,      # Output code chunks
+  message = FALSE,  # Toggle off message output 
+  warning = FALSE,    # Toggle off warning output
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "graphics/knitr-",
+  fig.retina = 2, # Control using dpi
+  fig.width = 6,  # generated images
+  fig.pos = "t",  # pdf mode
+  fig.align = "center",
+  dpi = if (knitr::is_latex_output()) 72 else 300, 
+  out.width = "100%",
+  dev = "svg",
+  dev.args = list(png = list(type = "cairo-png")),
+  optipng = "-o1 -quiet") 
+
+library(reticulate)
+# reticulate::py_config()
+# knitr::opts_knit$set(root.dir = usethis::proj_path())
+
+# libraries used in report
+library(knitr)
+library(kableExtra)
+library(tidyverse)
+
+theme_set(theme_light(base_family = "Avenir"))
+```
+
+
+## 加载包
+```{r}
+library(tidyverse)
+library(GDCRNATools)
+library(janitor)
+library(enrichR)
+# library(officer)
+library(ggtext)
+#library(geo)
+devtools::load_all(".")
+
+```
+## set var
+```{r}
+all_gse_id <- c("GSE12452", "GSE13597", "GSE64634")
+```
+
+## 维恩图
+
+```{r}
+# 所有之前保存的数据
+# 看你需要哪天的报告数据, 默认取最后一天的
+
+res_dir_path <-
+  fs::dir_ls("analysis/data/derived_data", regexp = "GSE") %>%
+  keep( ~ basename(.x) %in% all_gse_id)
+
+(files <- stringr::str_glue("{res_dir_path}/.Rdata"))
+
+all_res <- list()
+
+for(it in files){
+  load(it)
+  all_res[[gse$id]] <- gse
+}
+
+```
+
+```{r eval=FALSE, include=FALSE}
+### Up
+library(ggvenn)
+library(purrr)
+venn <- list()
+list_names <- names(all_res)
+
+all_res %>%
+  map( ~ .x$down_genes %>% toupper) %>% 
+  reduce(intersect) %>% 
+  keep(~ str_detect(.x, "LXN"))
+
+venn$venn_up_plot <- 
+  all_res %>% 
+  map(~ .x$up_genes %>% toupper) %>%
+  purrr::set_names(list_names) %>% 
+  ggvenn(show_percentage = TRUE, digits = 1,
+         #show_elements = TRUE, label_sep = "\n", # show elements in line
+         stroke_linetype = 1, stroke_size = 0.5,
+         set_name_color = "red", set_name_size = 6
+         ) +
+  ggplot2::labs(title = "Up Genes") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+venn$up_genes <- 
+all_res %>% 
+  map(~ .x$up_genes %>% toupper) %>% 
+  reduce(intersect)  %>% 
+  enframe() %>% 
+  set_names(c("num", "genes"))
+
+
+### down
+venn$venn_down_plot <- 
+  all_res %>% 
+  map(~ .x$down_genes %>% toupper)%>%
+  purrr::set_names(list_names) %>% 
+  ggvenn(show_percentage = TRUE, digits = 1,
+         #show_elements = TRUE, label_sep = "\n", # show elements in line
+         stroke_linetype = 1, stroke_size = 0.5,
+         set_name_color = "red", set_name_size = 6,
+         text_size = 4
+         ) +
+  ggplot2::labs(title = "Down Genes") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+venn$down_genes <- 
+all_res %>% 
+  map(~ .x$down_genes %>% toupper) %>% 
+  reduce(intersect)  %>% 
+  enframe() %>% 
+  set_names(c("num", "genes"))
+```
+
+```{r}
+res_path <-
+  stringr::str_glue(
+    "analysis/data/derived_data/venn_{all_gse_id %>% str_c(collapse='_')}_{Sys.Date()}"
+  )
+fs::dir_create(res_path)
+my_export(venn, path = res_path)
+save.image(stringr::str_glue("{res_path}/.Rdata"))
+```
+
+

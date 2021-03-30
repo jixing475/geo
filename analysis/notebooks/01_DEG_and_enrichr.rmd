@@ -138,7 +138,9 @@ my_export <- function(res, path = "~/Desktop"){
                             docx_path = stringr::str_glue("{path}/Tables.docx"))
     } 
     # ppt
-    else if("ggplot" %in% class(res[[it]])){
+    else if(
+      intersect(c("ggplot", "ggsurv", "ggsurvplot"), class(res[[it]])) %>% length() %>% `>`(0)
+    ){
       print(it)
       print(res[[it]])
       Sys.sleep(1)
@@ -169,9 +171,10 @@ my_export <- function(res, path = "~/Desktop"){
 }
 
 ```
-## set var
+## 🏃 set var
 
 ```{r}
+# "GSE12452", "GSE13597", "GSE64634"
 gse_id <- "GSE12452"
 ```
 
@@ -182,4 +185,5 @@ res_path <- stringr::str_glue("analysis/data/derived_data/{gse_id}")
 fs::dir_create(res_path)
 gse <- gse_collect(gse_id, pvalue = "P.Value")
 my_export(gse, path = res_path)
+save.image(stringr::str_glue("{res_path}/.Rdata"))
 ```

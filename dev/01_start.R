@@ -14,9 +14,9 @@
 ## Fill the DESCRIPTION ----
 ## Add meta data about your application
 golem::fill_desc(
-  pkg_name = "NPC.NasopharyngealCarcinoma", # The Name of the package containing the App 
-  pkg_title = "NPC Nasopharyngeal carcinoma", # The Title of the package containing the App 
-  pkg_description = "Some GEO array and TCGA analysis", # The Description of the package containing the App 
+  pkg_name = "geo", # The Name of the package containing the App 
+  pkg_title = "GEO analysis", # The Title of the package containing the App 
+  pkg_description = "Find GEO data and Data mining", # The Description of the package containing the App 
   author_first_name = "Jixing", # Your First Name
   author_last_name = "Liu", # Your Last Name
   author_email = "jixing475@163.com", # Your Email
@@ -28,7 +28,7 @@ golem::set_golem_options()
 
 ## Create Common Files ----
 ## See ?usethis for more information
-usethis::use_mit_license( name = "Golem User" )  # You can set another license here
+usethis::use_mit_license( name = "Jixing Liu" )  # You can set another license here
 usethis::use_readme_rmd( open = FALSE )
 usethis::use_code_of_conduct()
 usethis::use_lifecycle_badge( "Experimental" )

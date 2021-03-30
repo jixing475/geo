@@ -22,11 +22,9 @@
 #' @importFrom dplyr mutate select
 #' @importFrom purrr set_names
 #' @importFrom ggplot2 ylab
-plot_Volvano <- function(gse_id){
-  deg_res_path <-
-    stringr::str_glue("analysis/data/derived_data/{gse_id}/{gse_id}_Deg_result.csv")
+plot_Volvano <- function(gse){
   deg_res <-
-    readr::read_csv(deg_res_path) %>%
+    gse$DEG_table %>% 
     dplyr::mutate(group = "protein_coding") %>%
     dplyr::select(c("X1", "group", "logFC", "P.Value")) %>%
     purrr::set_names(c("symbol", "group", "logFC", "FDR"))

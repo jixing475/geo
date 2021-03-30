@@ -1,0 +1,185 @@
+---
+title: "hello world"
+description: |
+  Taking the `radix` R package for a test spin with `Scikit Learn`!
+author:
+  - name: Jixing Liu
+    url: https://jixing.netlify.com/
+    affiliation: iCarbonX
+    affiliation_url: https://www.icarbonx.com/en/
+date: "`r Sys.Date()`"
+#bibliography: biblio.bib  
+output:
+  radix::radix_article:
+    css: Blog_Template_Style.css
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    self_contained: true
+  md_document:
+always_allow_html: yes
+#bibliography: ./../../references.bib
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,      # Output code chunks
+  message = FALSE,  # Toggle off message output 
+  warning = FALSE,    # Toggle off warning output
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "graphics/knitr-",
+  fig.retina = 2, # Control using dpi
+  fig.width = 6,  # generated images
+  fig.pos = "t",  # pdf mode
+  fig.align = "center",
+  dpi = if (knitr::is_latex_output()) 72 else 300, 
+  out.width = "100%",
+  dev = "svg",
+  dev.args = list(png = list(type = "cairo-png")),
+  optipng = "-o1 -quiet") 
+
+library(reticulate)
+# reticulate::py_config()
+# knitr::opts_knit$set(root.dir = usethis::proj_path())
+
+# libraries used in report
+library(knitr)
+library(kableExtra)
+library(tidyverse)
+
+theme_set(theme_light(base_family = "Avenir"))
+```
+
+## 加载包
+```{r}
+library(tidyverse)
+library(GDCRNATools)
+library(janitor)
+library(enrichR)
+# library(officer)
+library(ggtext)
+#library(geo)
+devtools::load_all(".")
+
+```
+
+## 函数:读取所有的结果和富集分析+画图
+```{r}
+## 修改获取基因 list的标准 P.Value or adj.P.Val(default)
+# P.Value or  adj.P.Val
+# input: gse id and 
+# output: list result
+gse_collect <- function(gse_id, pvalue = "P.Value") {
+  gse <- list()
+  gse$id <- gse_id
+  
+  gse$expression_matrix_table <-
+    readr::read_csv(
+      stringr::str_glue(
+        "analysis/data/raw_data/{gse$id}/{gse$id}_Deg_data.csv"
+      )
+    )
+  
+  gse$DEG_table <-
+    readr::read_csv(
+      stringr::str_glue(
+        "analysis/data/raw_data/{gse$id}/{gse$id}_Deg_result.csv"
+      )
+    )
+  
+  ## 获取 gene list
+  gse$up_genes <-
+    gse %>%
+    .[["DEG_table"]] %>%
+    dplyr::filter(logFC >= 1) %>%
+    filter(!!rlang::parse_expr(pvalue)<= 0.05) %>%
+    pull(X1) 
+  
+  gse$down_genes <-
+    gse %>%
+    .[["DEG_table"]] %>%
+    dplyr::filter(logFC <= -1) %>%
+    filter(!!rlang::parse_expr(pvalue)<= 0.05) %>%
+    pull(X1) 
+  ## 火山图
+  gse$volcano_plot <- plot_Volvano(gse = gse)
+  ## 富集分析: Up
+  gse$enrichr_up <-
+    enrich_KEGG_GO_analysis(gse = gse, trend = "Up")
+  gse$enrichr_down <-
+    enrich_KEGG_GO_analysis(gse = gse, trend = "Down")
+  # gse <-
+  #   gse %>%
+  #   transpose() %>% 
+  #   transpose() %>% 
+  #   as_tibble()
+  return(gse)
+}
+
+# gse <- gse_collect("GSE12452", pvalue = "P.Value")
+# class(gse)
+```
+
+
+## 输出结果函数
+```{r}
+my_export <- function(res, path = "~/Desktop"){
+  for(it in names(res)){
+    # word
+    if("flextable" %in% class(res[[it]])){
+      print(it)
+      manuscriptsR::my_word(res[[it]],
+                            para = it,
+                            open = FALSE,
+                            docx_path = stringr::str_glue("{path}/Tables.docx"))
+    } 
+    # ppt
+    else if("ggplot" %in% class(res[[it]])){
+      print(it)
+      print(res[[it]])
+      Sys.sleep(1)
+      export::graph2ppt(
+        file = paste0(path, "/Figures.ppt"),
+        append = TRUE,
+        width=9, aspectr=1.5
+      )
+    }
+    # csv
+    else if("data.frame" %in% class(res[[it]])){
+      print(it)
+      rio::export(res[[it]], file = stringr::str_glue("{path}/{it}.csv"))
+    }
+    # character to txt
+    else if("character" %in% class(res[[it]])){
+      print(it)
+      readr::write_lines(res[[it]], file = stringr::str_glue("{path}/{it}.txt"))
+    }
+    # list recursive
+    else if("list" == class(res[[it]])){
+      print(it)
+      sub_path <- stringr::str_glue("{path}/{it}")
+      fs::dir_create(sub_path)
+      my_export(res[[it]], path = sub_path)
+    }
+  }
+}
+
+```
+## set var
+
+```{r}
+gse_id <- "GSE12452"
+```
+
+## run 
+```{r}
+# run
+res_path <- stringr::str_glue("analysis/data/derived_data/{gse_id}")
+fs::dir_create(res_path)
+gse <- gse_collect(gse_id, pvalue = "P.Value")
+my_export(gse, path = res_path)
+```

@@ -41,19 +41,17 @@ enrich_KEGG_GO_analysis <- function(gse, trend = "Up") {
   # 富集分析
   enrichr_res <- enrichR::enrichr(genes, dbs) #翻墙会快很多
   
-  p_kegg <-
+  enrichr_res$p_kegg <-
     enrichr_res$KEGG_2019_Human %>%
     plot_enrich(title = str_glue("KEGG pathway({trend})"))
-  p_go_BP <-
+  enrichr_res$p_go_BP <-
     enrichr_res$GO_Biological_Process_2018 %>%
     plot_enrich(title = str_glue("GO Biological Process({trend})"))
-  p_go_CC <-
+  enrichr_res$p_go_CC <-
     enrichr_res$GO_Cellular_Component_2018 %>%
     plot_enrich(title = str_glue("GO Cellular Component({trend})"))
-  p_go_MF <-
+  enrichr_res$p_go_MF <-
     enrichr_res$GO_Molecular_Function_2018 %>%
     plot_enrich(title = str_glue("GO Molecular Function({trend})"))
-  res <- list(enrichr_res, p_kegg, p_go_BP, p_go_CC, p_go_MF)
-  names(res) <- c("enrichr_res", "p_kegg", "p_go_BP", "p_go_CC", "p_go_MF")
-  return(res)
+  return(enrichr_res)
 }

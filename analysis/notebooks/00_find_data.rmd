@@ -1,0 +1,63 @@
+---
+title: "hello world"
+description: |
+  Taking the `radix` R package for a test spin with `Scikit Learn`!
+author:
+  - name: Jixing Liu
+    url: https://jixing.netlify.com/
+    affiliation: iCarbonX
+    affiliation_url: https://www.icarbonx.com/en/
+date: "`r Sys.Date()`"
+#bibliography: biblio.bib  
+output:
+  radix::radix_article:
+    css: Blog_Template_Style.css
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    self_contained: true
+  md_document:
+always_allow_html: yes
+#bibliography: ./../../references.bib
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,      # Output code chunks
+  message = FALSE,  # Toggle off message output 
+  warning = FALSE,    # Toggle off warning output
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "graphics/knitr-",
+  fig.retina = 2, # Control using dpi
+  fig.width = 6,  # generated images
+  fig.pos = "t",  # pdf mode
+  fig.align = "center",
+  dpi = if (knitr::is_latex_output()) 72 else 300, 
+  out.width = "100%",
+  dev = "svg",
+  dev.args = list(png = list(type = "cairo-png")),
+  optipng = "-o1 -quiet") 
+
+library(reticulate)
+# reticulate::py_config()
+# knitr::opts_knit$set(root.dir = usethis::proj_path())
+
+# libraries used in report
+library(knitr)
+library(kableExtra)
+library(tidyverse)
+
+theme_set(theme_light(base_family = "Avenir"))
+```
+
+## Abstract
+
+这篇文档主要是总结一下怎么快速找到自己想要的公共数据集
+
+
+
+

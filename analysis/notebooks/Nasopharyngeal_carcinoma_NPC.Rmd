@@ -1,0 +1,320 @@
+---
+title: "Untitled"
+author: "Jixing Liu"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  html_notebook:
+    theme: united
+    highlight: zenburn
+    toc: true
+    toc_float:
+      toc_collapsed: true
+    toc_depth: 3
+    number_sections: true
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+    echo = TRUE,      # Output code chunks
+    message = FALSE,  # Toggle off message output 
+    warning = FALSE,    # Toggle off warning output
+    fig.width = 6, fig.asp = 0.618, out.width = "70%", fig.align = "center") 
+
+knitr::opts_knit$set(root.dir = usethis::proj_path())
+library(docknitr)
+
+# libraries used in report
+library(knitr)
+library(kableExtra)
+library(tidyverse)
+
+# Globql formatting options
+options(digits = 3)
+
+# Global table settings 
+options(DT.options = list(pageLength = 10, 
+                          language = list(search = 'Filter:'), 
+                          scrollX = TRUE))
+# Global ggplot settings
+theme_set(theme_light(base_family = "Avenir"))
+```
+## info
+
++ LXN
++ latexin
++ Q9BS40
++ 56925
+
+## load packages
+```{r}
+# Version info: R 3.2.3, Biobase 2.30.0, GEOquery 2.40.0, limma 3.26.8
+################################################################
+#   Differential expression analysis with limma
+library(GEOquery)
+library(limma)
+library(umap)
+```
+
+
+```{r}
+Sys.setenv(http_proxy="http://127.0.0.1:53216")
+Sys.setenv(https_proxy="http://127.0.0.1:53216")
+
+```
+# GSE
+
+## + + GSE40290
+```{r}
+# load series and platform data from GEO
+
+gset <- getGEO("GSE40290", GSEMatrix =TRUE, AnnotGPL=FALSE)
+if (length(gset) > 1) idx <- grep("GPL8380", attr(gset, "names")) else idx <- 1
+gset <- gset[[idx]]
+
+# make proper column names to match toptable 
+fvarLabels(gset) <- make.names(fvarLabels(gset))
+
+# group membership for all samples
+gsms <- "000000000000000000000000011111111"
+sml <- strsplit(gsms, split="")[[1]]
+
+```
+
+## + + GSE12452
+```{r eval=FALSE, include=FALSE}
+gset <- getGEO("GSE12452", GSEMatrix =TRUE, AnnotGPL=TRUE)
+if (length(gset) > 1) idx <- grep("GPL570", attr(gset, "names")) else idx <- 1
+gset <- gset[[idx]]
+
+# make proper column names to match toptable 
+fvarLabels(gset) <- make.names(fvarLabels(gset))
+
+# group membership for all samples
+gsms <- "11111111110000000000000000000000000000000"
+sml <- strsplit(gsms, split="")[[1]]
+```
+
+## log2 transformation
+
+```{r}
+# gse_id <-
+```
+
+```{r}
+# log2 transformation
+ex <- exprs(gset)
+qx <- as.numeric(quantile(ex, c(0., 0.25, 0.5, 0.75, 0.99, 1.0), na.rm=T))
+# 确定是否已经转换了
+LogC <- (qx[5] > 100) ||
+  (qx[6] - qx[1] > 50 && qx[2] > 0)
+
+if (LogC) {
+  ex[which(ex <= 0)] <- NaN
+  exprs(gset) <- log2(ex)
+}
+```
+
+## assign samples to groups and set up design matrix
+```{r}
+# assign samples to groups and set up design matrix
+gs <- factor(sml)
+groups <- make.names(c("NPC","Normal"))
+levels(gs) <- groups
+gset$group <- gs
+design <- model.matrix(~group + 0, gset)
+colnames(design) <- levels(gs)
+
+fit <- lmFit(gset, design)  # fit linear model
+
+# set up contrasts of interest and recalculate model coefficients
+cts <- paste(groups[1], groups[2], sep="-")
+cont.matrix <- makeContrasts(contrasts=cts, levels=design)
+fit2 <- contrasts.fit(fit, cont.matrix)
+
+# compute statistics and table of top significant genes
+fit2 <- eBayes(fit2, 0.01)
+
+tT <- topTable(fit2, adjust="fdr", sort.by="B", number=250000)
+
+tT <- subset(tT, select=c("ID","adj.P.Val","P.Value","t","B","logFC","Gene.symbol")) %>% 
+  janitor::clean_names() %>% 
+  dplyr::filter(gene_symbol!="") %>% 
+  brotools::one_row(.,"gene_symbol") %>% 
+  tidyr::separate_rows(gene_symbol, gene_title, sep = "///") 
+
+write.table(tT, file="all_gene.csv", row.names=F, sep=",")
+```
+
+## 📌  DEG
+
+```{r}
+tT %>% 
+  dplyr::filter(abs(log_fc)>=1) %>% 
+  dplyr::filter(adj_p_val <= 0.05) %>% 
+  view()
+```
+
+
+## Visualize and quality control test results.
+```{r}
+# Visualize and quality control test results.
+# Build histogram of P-values for all genes. Normal test
+# assumption is that most genes are not differentially expressed.
+tT2 <- topTable(fit2, adjust="fdr", sort.by="B", number=Inf)
+
+tT2 %>%
+  ggplot(aes(x = adj.P.Val)) +
+  geom_histogram(color = "#e9ecef",
+                 alpha = 0.6,
+                 position = 'identity') +
+  labs(title = "P-adj value distribution",
+       x = "P-adj",
+       y = "Number of genes"
+  ) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# hist(
+#   tT2$adj.P.Val,
+#   col = "grey",
+#   border = "white",
+#   xlab = "P-adj",
+#   ylab = "Number of genes",
+#   main = "P-adj value distribution"
+# )
+```
+
+## summarize test results as "up", "down" or "not expressed"
+```{r}
+# summarize test results as "up", "down" or "not expressed"
+dT <- decideTests(fit2, adjust.method="fdr", p.value=0.05) 
+
+```
+
+## Venn diagram of results
+```{r}
+# Venn diagram of results
+# vennDiagram(dT, circle.col=palette())
+
+```
+
+## create Q-Q plot for t-statistic
+```{r}
+# create Q-Q plot for t-statistic
+t.good <- which(!is.na(fit2$F)) # filter out bad probes
+
+qqt(fit2$t[t.good], fit2$df.total[t.good], main="Moderated t statistic")
+```
+
+```{r}
+# volcano plot (log P-value vs log fold change)
+colnames(fit2) # list contrast names
+ct <- 1        # choose contrast of interest
+volcanoplot(fit2, coef=ct, main=colnames(fit2)[ct], pch=20,
+  highlight=length(which(dT[,ct]!=0)), names=rep('+', nrow(fit2)))
+
+# MD plot (log fold change vs mean log expression)
+# highlight statistically significant (p-adj < 0.05) probes
+plotMD(fit2, column=ct, status=dT[,ct], legend=F, pch=20, cex=1)
+abline(h=0)
+
+################################################################
+```
+
+```{r}
+# General expression data analysis
+ex <- exprs(gset)
+```
+
+```{r}
+# box-and-whisker plot
+dev.new(width=3+ncol(gset)/6, height=5)
+ord <- order(gs)  # order samples by group
+palette(c("#1B9E77", "#7570B3", "#E7298A", "#E6AB02", "#D95F02",
+          "#66A61E", "#A6761D", "#B32424", "#B324B3", "#666666"))
+par(mar=c(7,4,2,1))
+title <- paste ("GSE12452", "/", annotation(gset), sep ="")
+boxplot(ex[,ord], boxwex=0.6, notch=T, main=title, outline=FALSE, las=2, col=gs[ord])
+legend("topleft", groups, fill=palette(), bty="n")
+dev.off()
+```
+
+```{r}
+# expression value distribution
+par(mar=c(4,4,2,1))
+title <- paste ("GSE12452", "/", annotation(gset), " value distribution", sep ="")
+plotDensities(ex, group=gs, main=title, legend ="topright")
+```
+
+```{r}
+# UMAP plot (dimensionality reduction)
+ex <- na.omit(ex) # eliminate rows with NAs
+ex <- ex[!duplicated(ex), ]  # remove duplicates
+ump <- umap(t(ex), n_neighbors = 15, random_state = 123)
+par(mar=c(3,3,2,6), xpd=TRUE)
+plot(ump$layout, main="UMAP plot, nbrs=15", xlab="", ylab="", col=gs, pch=20, cex=1.5)
+legend("topright", inset=c(-0.15,0), legend=levels(gs), pch=20,
+col=1:nlevels(gs), title="Group", pt.cex=1.5)
+library("maptools")  # point labels without overlaps
+pointLabel(ump$layout, labels = rownames(ump$layout), method="SANN", cex=0.6)
+```
+
+```{r}
+# mean-variance trend, helps to see if precision weights are needed
+plotSA(fit2, main="Mean variance trend, GSE12452")
+
+```
+
+## Ref
+
+[Transcriptomic Analyses Reveal Gene Expression Profiles and Networks in Nasopharyngeal Carcinoma](https://www.hindawi.com/journals/bmri/2021/8890176/)
+
+## links
+
+[GSE12452](https://www.ncbi.nlm.nih.gov/geo/geo2r/?acc=GSE12452)
+
+[Identified IGSF9 association with prognosis and hypoxia in nasopharyngeal carcinoma by bioinformatics analysis](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7552377/)
+> 这篇文献还有生存资料
+
+[Gene Signatures and Prognostic Values of m6A Genes in Nasopharyngeal Carcinoma](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7300221/)
+> 这篇文章可以复现一下
+
+
+## 📌  GSE list
+
+p_value <=0.05
+logFC >= 1
+
+1. 📌  GSE12452 ✅   有显著性
+2. GSE68799 ✅ | 没有显著性NA-seq 可以用 biojupyter 分析
+3. GSE40290 (https://www.ncbi.nlm.nih.gov/geo/geo2r/?acc=GSE40290)
+4. 📌  GSE53819 ✅  G(没有显著性)
+5. GSE64634 ✅   有显著性
+6. GSE102349✅ | (有生存资料) 用 biojupyter 分析, 没有显著性
+7. GSE103611 (生存资料) [opentsv/geo_files2019.txt at 3d7441a632fccb2e97efdc55faae90dbd27f0c7a · derijkp/opentsv](https://github.com/derijkp/opentsv/blob/3d7441a632fccb2e97efdc55faae90dbd27f0c7a/checkpapers/geo_files2019.txt)
+8. GSE48501 (化疗敏感不敏感)
+9.GSE32960 
+
+> 要做一个最省事的步骤
+
+放射敏感和不敏感代表什么? LNX 在敏感中是低的? (类似于癌症中是低的)
+## to do list
+
+需要哪些图表
+怎么生成图表和输出
+
+## GSE102349
+
+[bioinformatic-basic-practices/Part II - R and Basic statistic analysis of differential Gene expression detection.md at e03580ff891a0f0d45e0e9136bdcfd6fc306f4e8 · leiwaaping/bioinformatic-basic-practices](https://github.com/leiwaaping/bioinformatic-basic-practices/blob/e03580ff891a0f0d45e0e9136bdcfd6fc306f4e8/Part%20II%20-%20R%20and%20Basic%20statistic%20analysis%20of%20differential%20Gene%20expression%20detection.md)
+
+
+### Expression matrix download
+
+Download Expression matrix and clinical information from NCBI ([GSE102349](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE102349))
+
+  * sample clinical information: click Series Matrix File(s) and download file _GSE102349_series_matrix.txt.gz_；;for user in local PC, can try _"GSE102349_series_matrix_5000gene.txt"_.
+  * expression data：_GSE102349_NPC_mRNA_processed.txt.gz_
+
+

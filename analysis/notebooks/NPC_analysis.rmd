@@ -1,0 +1,453 @@
+---
+title: "hello world"
+description: |
+  Taking the `radix` R package for a test spin with `Scikit Learn`!
+author:
+  - name: Jixing Liu
+    url: https://jixing.netlify.com/
+    affiliation: DeepDrug
+    affiliation_url: http://www.deepdrug.cn/en/
+date: "`r Sys.Date()`"
+#bibliography: biblio.bib  
+output:
+  radix::radix_article:
+    css: Blog_Template_Style.css
+    toc: true
+    toc_depth: 3
+    number_sections: truec("tell application \"System Events\"", "tell (first process whose frontmost is true) to return name of window 1", "end tell")
+    self_contained: true
+  md_document:
+always_allow_html: yes
+#bibliography: ./../../references.bib
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+    echo = TRUE,      # Output code chunks
+    message = FALSE,  # Toggle off message output 
+    warning = FALSE,    # Toggle off warning output
+    fig.width = 6, fig.asp = 0.618, out.width = "70%", fig.align = "center") 
+library(reticulate)
+# reticulate::py_config()
+# knitr::opts_knit$set(root.dir = usethis::proj_path())
+
+# libraries used in report
+library(knitr)
+library(kableExtra)
+library(tidyverse)
+
+theme_set(theme_light(base_family = ""))
+```
+## 加载包
+```{r}
+library(GDCRNATools)
+library(janitor)
+library(enrichR)
+library(officer)
+library(ggtext)
+# library(NPC.NasopharyngealCarcinoma)
+devtools::load_all(".")
+
+```
+
+## function
+
+### 读取所有的结果
+```{r}
+## 修改获取基因 list的标准 P.Value or adj.P.Val(default)
+# P.Value or  adj.P.Val
+
+gse_collect <- function(gse_id, pvalue = "P.Value") {
+  gse <- list()
+  gse$id <- gse_id
+  
+  gse$expression_matrix_table <-
+    readr::read_csv(
+      stringr::str_glue(
+        "analysis/data/derived_data/{gse$id}/{gse$id}_Deg_data.csv"
+      )
+    )
+  
+  gse$DEG_table <-
+    readr::read_csv(
+      stringr::str_glue(
+        "analysis/data/derived_data/{gse$id}/{gse$id}_Deg_result.csv"
+      )
+    )
+  
+  ## 获取 gene list
+  gse$up_genes <-
+    gse %>%
+    .[["DEG_table"]] %>%
+    filter(logFC >= 1) %>%
+    filter(!!rlang::parse_expr(pvalue)<= 0.05) %>%
+    pull(X1) 
+  
+  gse$down_genes <-
+    gse %>%
+    .[["DEG_table"]] %>%
+    filter(logFC <= -1) %>%
+    filter(!!rlang::parse_expr(pvalue)<= 0.05) %>%
+    pull(X1) 
+  
+  
+  ## 火山图
+  gse$volcano_plot <- plot_Volvano(gse_id = gse$id)
+  
+  ## 富集分析: Up
+  enrichr_up <-
+    enrich_KEGG_GO_analysis(gse = gse, trend = "Up")
+  #
+  gse$up_kegg_table <- enrichr_up$enrichr_res$KEGG_2019_Human
+  gse$up_go_BP_table <- enrichr_up$enrichr_res$GO_Biological_Process_2018
+  gse$up_go_CC_table <- enrichr_up$enrichr_res$GO_Cellular_Component_2018
+  gse$up_go_MF_table <- enrichr_up$enrichr_res$GO_Molecular_Function_2018
+  #
+  gse$up_kegg_plot <- enrichr_up$p_kegg
+  gse$up_go_BP_plot <- enrichr_up$p_go_BP
+  gse$up_go_CC_plot <- enrichr_up$p_go_CC
+  gse$up_go_MF_plot <- enrichr_up$p_go_MF
+  ## 富集分析: Down
+  enrichr_down <-
+    enrich_KEGG_GO_analysis(gse = gse, trend = "Down")
+  #
+  gse$down_kegg_table <- enrichr_down$enrichr_res$KEGG_2019_Human
+  gse$down_go_BP_table <- enrichr_down$enrichr_res$GO_Biological_Process_2018
+  gse$down_go_CC_table <- enrichr_down$enrichr_res$GO_Cellular_Component_2018
+  gse$down_go_MF_table <- enrichr_down$enrichr_res$GO_Molecular_Function_2018
+  #
+  gse$down_kegg_plot <- enrichr_down$p_kegg
+  gse$down_go_BP_plot <- enrichr_down$p_go_BP
+  gse$down_go_CC_plot <- enrichr_down$p_go_CC
+  gse$down_go_MF_plot <- enrichr_down$p_go_MF
+  return(gse)
+}
+```
+
+### export result
+```{r}
+report_path <-
+  stringr::str_glue("analysis/data/derived_data/report_{Sys.Date()}")
+fs::dir_create(report_path)
+
+# 尝试用iwalk
+
+gse_export <- function(gse_res) {
+  res_path <- stringr::str_glue("{report_path}/{gse_res$id}")
+  fs::dir_create(res_path)
+    
+  gse_res %>%
+    names(.) %>%
+    manuscriptsR::vec_detect_keep(., "table$") %>% 
+    walk(~ write_csv(gse_res[[.]],  file = paste0(res_path, "/", ., ".csv")))
+  
+  gse_res %>%
+    names(.) %>%
+    manuscriptsR::vec_detect_keep(., "plot$") %>%
+    walk( ~ {
+      print(.x)
+      ppt <- officer::read_pptx()
+      ppt <-
+        ppt %>%
+        officer::add_slide(., layout = "Title and Content", master = "Office Theme") %>%
+        officer::ph_with(
+          value = rvg::dml(code = print(gse_res[[.x]])),
+          location = officer::ph_location_type(type = "body")
+        ) %>%
+        print(target = paste0(res_path, "/", .x, ".pptx"))
+    })
+}
+
+```
+
+## 📌  set var
+```{r}
+# 只需要在这更改 GSEID 号
+all_gse_id <- c("GSE12452", "GSE13597", "GSE64634")
+p_value <- "adj.P.Val" # "P.Value" or "adj.P.Val"
+```
+
+##  差异分析 + 富集分析
+```{r eval=FALSE, include=FALSE}
+for(it in all_gse_id) {
+  print(it)
+  # 获取所有数据并富集和画图表
+  res <-
+    gse_collect(gse_id = it, pvalue = p_value)
+  # 输出所有图表
+  gse_export(res)
+  # 保存每个 GSE 作为后续分析
+  save(res,
+       file = stringr::str_glue("{report_path}/{it}.Rdata"))
+}
+
+```
+
+
+## 维恩图
+
+```{r}
+# 所有值钱保存的数据
+# 看你需要哪天的报告数据, 默认取最后一天的
+(report_path <-
+  fs::dir_ls("analysis/data/derived_data", regexp = "report") %>% last())
+
+
+files <- fs::dir_ls(report_path, regexp = ".Rdata")
+
+all_res <- list()
+
+for(it in files){
+  load(it)
+  all_res[[res$id]] <- res
+}
+
+```
+
+```{r eval=FALSE, include=FALSE}
+### Up
+library(ggvenn)
+library(purrr)
+venn <- list()
+list_names <- names(all_res)
+gene_list <- list()
+
+all_res %>%
+  map( ~ .x$down_genes %>% toupper) %>% 
+  reduce(intersect) %>% 
+  keep(~ str_detect(.x, "LXN"))
+
+venn$venn_up_plot <- 
+  all_res %>% 
+  map(~ .x$up_genes %>% toupper) %>%
+  purrr::set_names(list_names) %>% 
+  ggvenn(show_percentage = TRUE, digits = 1,
+         #show_elements = TRUE, label_sep = "\n", # show elements in line
+         stroke_linetype = 1, stroke_size = 0.5,
+         set_name_color = "red", set_name_size = 6
+         ) +
+  ggplot2::labs(title = "Up Genes") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+gene_list$up_genes <- 
+all_res %>% 
+  map(~ .x$up_genes %>% toupper) %>% 
+  reduce(intersect)  %>% 
+  enframe() %>% 
+  set_names(c("num", "genes"))
+
+
+### down
+venn$venn_down_plot <- 
+  all_res %>% 
+  map(~ .x$down_genes %>% toupper)%>%
+  purrr::set_names(list_names) %>% 
+  ggvenn(show_percentage = TRUE, digits = 1,
+         #show_elements = TRUE, label_sep = "\n", # show elements in line
+         stroke_linetype = 1, stroke_size = 0.5,
+         set_name_color = "red", set_name_size = 6,
+         text_size = 4
+         ) +
+  ggplot2::labs(title = "Down Genes") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+gene_list$down_genes <- 
+all_res %>% 
+  map(~ .x$down_genes %>% toupper) %>% 
+  reduce(intersect)  %>% 
+  enframe() %>% 
+  set_names(c("num", "genes"))
+
+venn %>%
+  names(.) %>%
+  manuscriptsR::vec_detect_keep(., "plot$") %>%
+  walk(~ {
+    print(.x)
+    ppt <- officer::read_pptx()
+    ppt <-
+      ppt %>%
+      officer::add_slide(., layout = "Title and Content", master = "Office Theme") %>%
+      officer::ph_with(
+        value = rvg::dml(code = print(venn[[.x]])),
+        location = officer::ph_location_type(type = "body")
+      ) %>%
+      print(target = paste0(report_path, "/", .x, ".pptx"))
+  })
+
+rio::export(gene_list, file = paste0(report_path, "/", "venn_gene_list", ".xlsx"))
+```
+
+
+## 生存分析
+
+```{r}
+library("survival")
+library("survminer")
+library("gtsummary")
+library(tidyverse)
+clin <- rio::import("analysis/data/derived_data/GSE102349/GSE102349_sample.txt") %>% 
+  select(c("Acc", "Desc","time to event", "event")) %>% 
+  janitor::clean_names()
+
+clin <- 
+clin %>% 
+  filter(time_to_event != "N/A") %>% 
+  rename(sample = desc) 
+
+data <- rio::import("analysis/data/derived_data/GSE102349/GSE102349_NPC_mRNA_processed.txt.gz")
+
+```
+
+
+### function
+```{r}
+cox_uni_table_and_plot <- function(gene_list) {
+  res <- list()
+  expr <-
+    data %>%
+    filter(Gene.Symbol %in% gene_list) %>%
+    tibble::column_to_rownames("Gene.Symbol") %>%
+    manuscriptsR::df_turn() %>%
+    rownames_to_column("sample")
+  
+  df_sur <-
+    clin %>%
+    left_join(expr)
+  # colnames(df_sur)
+  df_sur_clean <-
+    df_sur %>%
+    mutate(
+      time = as.numeric(time_to_event) * 30,
+      status = if_else(event == "Disease progression", 2, 1)
+    ) %>%
+    select(-acc, -sample, -time_to_event, -event)
+  # glimpse(df_sur_clean)
+  
+  ## 设置需要进行拟合的变量
+  covariates <- df_sur_clean %>% colnames() %>%
+    discard( ~ str_detect(.x, "time|status")) 
+
+  df_sur_clean_km <-
+    df_sur_clean %>%
+    mutate(across(
+      covariates,
+      ~ if_else(.x <= median(.x), "Low", "High") %>%
+        as_factor() %>% 
+        fct_relevel(., "Low", "High")
+    )) 
+
+  # word:单变量 cox 回归
+  res$uni_cox_docx <- 
+  tbl_uvregression(
+    df_sur_clean,
+    method = coxph,
+    y = Surv(time, status),
+    exponentiate = TRUE,
+    hide_n = TRUE
+  ) %>% 
+    as_flex_table()
+  
+  #plot
+  for (it in covariates) {
+    print(it)
+    ## 拟合的形式
+    res[[stringr::str_glue("{it}_plot")]] <- 
+    as.formula(paste('Surv(time, status)~', it)) %>% 
+      surv_fit(., data = df_sur_clean_km) %>% 
+      ggsurvplot(
+        data = df_sur_clean_km,
+        size = 1,  
+        legend.title = it, # change line size
+        palette =
+          c("#194685", "#DA3022"),# custom color palettes
+        # conf.int = TRUE,          # Add confidence interval
+        pval = TRUE,              # Add p-value
+        risk.table = TRUE,        # Add risk table
+        risk.table.col = "strata",# Risk table color by groups
+        legend.labs =
+          c("Low", "High"),    # Change legend labels
+        risk.table.height = 0.25, # Useful to change when you   have multiple groups
+        ggtheme = theme_bw()      # Change ggplot2 theme
+      )
+}
+  return(res)
+}
+
+
+```
+
+
+### 生存分析的结果 list: res_sur
+```{r}
+res_sur <- list()
+
+# down_genes 
+res_sur$down_genes <- 
+all_res %>%
+  map(~ .x$down_genes %>% toupper) %>%
+  reduce(intersect)  %>%
+  cox_uni_table_and_plot(gene_list = .) 
+
+
+# up genes
+res_sur$up_genes <- 
+all_res %>%
+  map(~ .x$up_genes %>% toupper) %>%
+  reduce(intersect)  %>%
+  cox_uni_table_and_plot(gene_list = .) 
+  # manuscriptsR::my_ft() %>% 
+  # my_word(., para = "Down genes", path = "analysis/data/derived_data/GSE102349/down_genes.docx")
+```
+
+```{r}
+report_sur_path <-
+  stringr::str_glue("analysis/data/derived_data/survival_{Sys.Date()}")
+fs::dir_create(report_sur_path)
+
+
+my_export <- function(res, path = "~/Desktop"){
+  for(it in names(res)){
+    # word
+    if("flextable" %in% class(res[[it]])){
+      print(it)
+      manuscriptsR::my_word(res[[it]],
+                            para = it,
+                            open = FALSE,
+                            docx_path = stringr::str_glue("{path}/Tables.docx"))
+    } 
+    # ppt
+    else if(class(res[[it]]) %>% str_detect("gg")){
+      print(it)
+      print(res[[it]])
+      Sys.sleep(1)
+      export::graph2ppt(
+        file = paste0(path, "/Figures.ppt"),
+        append = TRUE,
+        margins = c(top = 0.5, right = 0.5, bottom = 0.5, left = 0.5),
+      )
+    }
+    # csv
+    else if("data.frame" %in% class(res[[it]])){
+      print(it)
+      rio::export(res[[it]], file = stringr::str_glue("{path}/{it}.csv"))
+    }
+  }
+}
+
+# my_export(res, path = "~/Desktop")
+
+```
+
+```{r}
+res_path <- stringr::str_glue("{report_sur_path}/down_gene")
+fs::dir_create(res_path)
+my_export(res_sur$down_genes, res_path)
+
+res_path <- stringr::str_glue("{report_sur_path}/up_gene")
+fs::dir_create(res_path)
+my_export(res_sur$up_genes, res_path)
+```

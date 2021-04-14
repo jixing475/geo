@@ -171,6 +171,7 @@ for (it in covariates) {
     ggsurvplot(
       data = df_sur_clean_km,
       size = 1,  
+      surv.median.line = "hv", # Add medians survival
       legend.title = it, # change line size
       palette =
         c("#194685", "#DA3022"),# custom color palettes

@@ -4,17 +4,15 @@
 library(GEOquery)
 library(limma)
 library(umap)
-library(tidyverse)
-Sys.setenv(http_proxy="http://127.0.0.1:53216")
-Sys.setenv(https_proxy="http://127.0.0.1:53216")
-# load series and platform data from GEO
+
 # var set 📌  -------------------------------------------------------
-gse_id <- "GSE12452"
-data_path  <- "analysis/data/derived_data/{gse_id}" %>% stringr::str_glue()
+library(tidyverse)
+gse_id <- "GSE66271"
+data_path  <- "analysis/data/raw_data/{gse_id}" %>% stringr::str_glue()
 fs::dir_create(data_path)
+# load series and platform data from GEO
 
-
-gset <- getGEO(gse_id, GSEMatrix =TRUE, AnnotGPL=TRUE)
+gset <- getGEO("GSE66271", GSEMatrix =TRUE, AnnotGPL=TRUE)
 if (length(gset) > 1) idx <- grep("GPL570", attr(gset, "names")) else idx <- 1
 gset <- gset[[idx]]
 
@@ -22,7 +20,7 @@ gset <- gset[[idx]]
 fvarLabels(gset) <- make.names(fvarLabels(gset))
 
 # group membership for all samples
-gsms <- "11111111110000000000000000000000000000000"
+gsms <- "01010101010101010101010101"
 sml <- strsplit(gsms, split="")[[1]]
 
 # log2 transformation
@@ -35,7 +33,7 @@ exprs(gset) <- log2(ex) }
 
 # assign samples to groups and set up design matrix
 gs <- factor(sml)
-groups <- make.names(c("NPC","Normal"))
+groups <- make.names(c("ccRCC","Normal"))
 levels(gs) <- groups
 gset$group <- gs
 design <- model.matrix(~group + 0, gset)
@@ -55,13 +53,11 @@ tT <- topTable(fit2, adjust="fdr", sort.by="B", number=250000)
 
 tT <- subset(tT, select=c("ID","logFC","t","P.Value","adj.P.Val","B","Gene.symbol")) %>% 
   dplyr::filter(Gene.symbol!="") %>% 
-  brotools::one_row(.,"Gene.symbol") %>% 
   tidyr::separate_rows(Gene.symbol, sep = "///") %>% 
+  brotools::one_row(.,"Gene.symbol") %>% 
   column_to_rownames("Gene.symbol")
 
-write.table(tT, file=stringr::str_glue("{data_path}/{gse_id}_DEG_all_gene.csv"), row.names=F, sep=",")
-# tT <- subset(tT, select=c("ID","adj.P.Val","P.Value","t","B","logFC","Gene.symbol","Gene.title","Gene.ID","UniGene.symbol"))
-# write.table(tT, file=stdout(), row.names=F, sep="\t")
+rio::export(tT, file=stringr::str_glue("{data_path}/{gse_id}_Deg_result.csv"), row.name = TRUE)
 
 # Visualize and quality control test results.
 # Build histogram of P-values for all genes. Normal test
@@ -91,10 +87,11 @@ volcanoplot(fit2, coef=ct, main=colnames(fit2)[ct], pch=20,
 plotMD(fit2, column=ct, status=dT[,ct], legend=F, pch=20, cex=1)
 abline(h=0)
 
+# expression matrix 📌   --------------------------------------------------------
 ################################################################
 # General expression data analysis
 ex <- exprs(gset)
-# expression matrix -------------------------------------------------------------
+
 ex %>% 
   as.data.frame() %>% 
   rownames_to_column("ID") %>% 
@@ -103,38 +100,35 @@ ex %>%
                rownames_to_column("Genes")) %>% 
   select(Genes, ID, everything()) %>% 
   rio::export(., str_glue("{data_path}/{gse_id}_Deg_data.csv"))
-  
 
 # box-and-whisker plot
-# dev.new(width=3+ncol(gset)/6, height=5)
-# ord <- order(gs)  # order samples by group
-# palette(c("#1B9E77", "#7570B3", "#E7298A", "#E6AB02", "#D95F02",
-#           "#66A61E", "#A6761D", "#B32424", "#B324B3", "#666666"))
-# par(mar=c(7,4,2,1))
-# title <- paste ("GSE12452", "/", annotation(gset), sep ="")
-# boxplot(ex[,ord], boxwex=0.6, notch=T, main=title, outline=FALSE, las=2, col=gs[ord])
-# legend("topleft", groups, fill=palette(), bty="n")
-# dev.off()
+ord <- order(gs)  # order samples by group
+palette(c("#1B9E77", "#7570B3", "#E7298A", "#E6AB02", "#D95F02",
+          "#66A61E", "#A6761D", "#B32424", "#B324B3", "#666666"))
+par(mar=c(7,4,2,1))
+title <- paste ("GSE66271", "/", annotation(gset), sep ="")
+boxplot(ex[,ord], boxwex=0.6, notch=T, main=title, outline=FALSE, las=2, col=gs[ord])
+legend("topleft", groups, fill=palette(), bty="n")
 
 # expression value distribution
 par(mar=c(4,4,2,1))
-title <- paste ("GSE12452", "/", annotation(gset), " value distribution", sep ="")
+title <- paste ("GSE66271", "/", annotation(gset), " value distribution", sep ="")
 plotDensities(ex, group=gs, main=title, legend ="topright")
 
 # UMAP plot (dimensionality reduction)
 ex <- na.omit(ex) # eliminate rows with NAs
 ex <- ex[!duplicated(ex), ]  # remove duplicates
-ump <- umap(t(ex), n_neighbors = 15, random_state = 123)
+ump <- umap(t(ex), n_neighbors = 11, random_state = 123)
 par(mar=c(3,3,2,6), xpd=TRUE)
-plot(ump$layout, main="UMAP plot, nbrs=15", xlab="", ylab="", col=gs, pch=20, cex=1.5)
+plot(ump$layout, main="UMAP plot, nbrs=11", xlab="", ylab="", col=gs, pch=20, cex=1.5)
 legend("topright", inset=c(-0.15,0), legend=levels(gs), pch=20,
        col=1:nlevels(gs), title="Group", pt.cex=1.5)
 library("maptools")  # point labels without overlaps
 pointLabel(ump$layout, labels = rownames(ump$layout), method="SANN", cex=0.6)
 
 # mean-variance trend, helps to see if precision weights are needed
-plotSA(fit2, main="Mean variance trend, GSE12452")
+plotSA(fit2, main="Mean variance trend, GSE66271")
 
-# save -------------------------------------------------------------
+# save 📌  -------------------------------------------------------------
 
 save.image(str_glue("{data_path}/{gse_id}.Rdata"))

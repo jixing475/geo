@@ -54,6 +54,11 @@ library(tidyverse)
 theme_set(theme_light(base_family = "Avenir"))
 ```
 
+
+
+
+# 差异分析 + 富集分析
+
 ## 加载包
 ```{r}
 library(tidyverse)
@@ -123,12 +128,11 @@ gse_collect <- function(gse_id, pvalue = "P.Value") {
 
 
 
-
 ## 🏃 set var
 
 ```{r}
-# "GSE12452", "GSE13597", "GSE64634"
-gse_id <- "GSE12452"
+
+gse_id <- "GSE66271"
 ```
 
 ## run 
@@ -139,4 +143,11 @@ fs::dir_create(res_path)
 gse <- gse_collect(gse_id, pvalue = "P.Value")
 my_export(gse, path = res_path)
 save.image(stringr::str_glue("{res_path}/.Rdata"))
+```
+
+
+```{r}
+
+
+
 ```

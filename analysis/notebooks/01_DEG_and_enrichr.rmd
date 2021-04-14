@@ -56,72 +56,9 @@ theme_set(theme_light(base_family = "Avenir"))
 
 ## 加载包
 ```{r}
-library(tidyverse)
-library(GDCRNATools)
-library(janitor)
-library(enrichR)
-# library(officer)
-library(ggtext)
-#library(geo)
 devtools::load_all(".")
-
+load_pkg()
 ```
-
-## 函数:读取所有的结果和富集分析+画图
-```{r}
-## 修改获取基因 list的标准 P.Value or adj.P.Val(default)
-# P.Value or  adj.P.Val
-# input: gse id and 
-# output: list result
-gse_collect <- function(gse_id, pvalue = "P.Value") {
-  gse <- list()
-  gse$id <- gse_id
-  
-  gse$expression_matrix_table <-
-    readr::read_csv(
-      stringr::str_glue(
-        "analysis/data/raw_data/{gse$id}/{gse$id}_Deg_data.csv"
-      )
-    )
-  
-  gse$DEG_table <-
-    readr::read_csv(
-      stringr::str_glue(
-        "analysis/data/raw_data/{gse$id}/{gse$id}_Deg_result.csv"
-      )
-    )
-  
-  ## 获取 gene list
-  gse$up_genes <-
-    gse %>%
-    .[["DEG_table"]] %>%
-    dplyr::filter(logFC >= 1) %>%
-    filter(!!rlang::parse_expr(pvalue)<= 0.05) %>%
-    pull(X1) 
-  
-  gse$down_genes <-
-    gse %>%
-    .[["DEG_table"]] %>%
-    dplyr::filter(logFC <= -1) %>%
-    filter(!!rlang::parse_expr(pvalue)<= 0.05) %>%
-    pull(X1) 
-  ## 火山图
-  gse$volcano_plot <- plot_Volvano(gse = gse)
-  ## 富集分析: Up
-  gse$enrichr_up <-
-    enrich_KEGG_GO_analysis(gse = gse, trend = "Up") %>%
-    set_names( ~ str_remove(.x, "_2018|_2019"))
-  gse$enrichr_down <-
-    enrich_KEGG_GO_analysis(gse = gse, trend = "Down") %>% 
-    set_names( ~ str_remove(.x, "_2018|_2019"))
-  return(gse)
-}
-
-# gse <- gse_collect("GSE12452", pvalue = "P.Value")
-# class(gse)
-```
-
-
 
 
 ## 🏃 set var
@@ -136,7 +73,7 @@ gse_id <- "GSE12452"
 # run
 res_path <- stringr::str_glue("analysis/data/derived_data/{gse_id}")
 fs::dir_create(res_path)
-gse <- gse_collect(gse_id, pvalue = "P.Value")
+gse <- gse_DEG_Enrichr(gse_id, pvalue = "P.Value")
 my_export(gse, path = res_path)
 save.image(stringr::str_glue("{res_path}/.Rdata"))
 ```

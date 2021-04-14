@@ -56,14 +56,8 @@ theme_set(theme_light(base_family = "Avenir"))
 
 
 ```{r}
-library(GDCRNATools)
-library(janitor)
-library(enrichR)
-library(officer)
-library(ggtext)
-# library(NPC.NasopharyngealCarcinoma)
 devtools::load_all(".")
-
+load_pkg()
 ```
 
 
